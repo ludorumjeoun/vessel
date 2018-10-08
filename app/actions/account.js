@@ -1,8 +1,18 @@
 // @flow
 import steem from 'steem';
+import { Asset, Price, Client } from 'dsteem'
 import type { accountStateType } from '../reducers/account';
 import * as ProcessingActions from './processing';
 
+export const ACCOUNT_CUSTOM_JSON_STARTED = 'ACCOUNT_CUSTOM_JSON_STARTED';
+export const ACCOUNT_CUSTOM_JSON_RESOLVED = 'ACCOUNT_CUSTOM_JSON_RESOLVED';
+export const ACCOUNT_CUSTOM_JSON_FAILED = 'ACCOUNT_CUSTOM_JSON_FAILED';
+export const ACCOUNT_CUSTOM_JSON_COMPLETED = 'ACCOUNT_CUSTOM_JSON_COMPLETED';
+export const ACCOUNT_CUSTOM_OPS_STARTED = 'ACCOUNT_CUSTOM_OPS_STARTED';
+export const ACCOUNT_CUSTOM_OPS_RESOLVED = 'ACCOUNT_CUSTOM_OPS_RESOLVED';
+export const ACCOUNT_CUSTOM_OPS_FAILED = 'ACCOUNT_CUSTOM_OPS_FAILED';
+export const ACCOUNT_CUSTOM_OPS_COMPLETED = 'ACCOUNT_CUSTOM_OPS_COMPLETED';
+export const ACCOUNT_DATA_MINIMUM_ACCOUNT_DELEGATION = 'ACCOUNT_DATA_MINIMUM_ACCOUNT_DELEGATION';
 export const ACCOUNT_DATA_UPDATE = 'ACCOUNT_DATA_UPDATE';
 export const ACCOUNT_DATA_UPDATE_FAILED = 'ACCOUNT_DATA_UPDATE_FAILED';
 export const ACCOUNT_DATA_UPDATE_PENDING = 'ACCOUNT_DATA_UPDATE_PENDING';
@@ -26,6 +36,10 @@ export const ACCOUNT_SET_VOTING_PROXY_STARTED = 'ACCOUNT_SET_VOTING_PROXY_STARTE
 export const ACCOUNT_SET_VOTING_PROXY_FAILED = 'ACCOUNT_SET_VOTING_PROXY_FAILED';
 export const ACCOUNT_SET_VOTING_PROXY_RESOLVED = 'ACCOUNT_SET_VOTING_PROXY_RESOLVED';
 export const ACCOUNT_SET_VOTING_PROXY_COMPLETED = 'ACCOUNT_SET_VOTING_PROXY_COMPLETED';
+export const ACCOUNT_VOTE_WITNESS_STARTED = 'ACCOUNT_VOTE_WITNESS_STARTED';
+export const ACCOUNT_VOTE_WITNESS_FAILED = 'ACCOUNT_VOTE_WITNESS_FAILED';
+export const ACCOUNT_VOTE_WITNESS_RESOLVED = 'ACCOUNT_VOTE_WITNESS_RESOLVED';
+export const ACCOUNT_VOTE_WITNESS_COMPLETED = 'ACCOUNT_VOTE_WITNESS_COMPLETED';
 export const ACCOUNT_VESTING_WITHDRAW_COMPLETED = 'ACCOUNT_VESTING_WITHDRAW_COMPLETED';
 export const ACCOUNT_VESTING_WITHDRAW_STARTED = 'ACCOUNT_VESTING_WITHDRAW_STARTED';
 export const ACCOUNT_VESTING_WITHDRAW_FAILED = 'ACCOUNT_VESTING_WITHDRAW_FAILED';
@@ -51,11 +65,70 @@ export function claimRewardBalance(wif: string, params: object) {
       extensions: []
     }, {
       posting: wif
-    }, (err, result) => {
+    }, () => {
       dispatch(ProcessingActions.processingRewardClaimComplete());
       dispatch(refreshAccountData([account]));
     });
     dispatch(ProcessingActions.processingRewardClaim());
+  };
+}
+
+// This function automatically attempts to use the minimal account creation fee
+// and delegation amount.
+export function createAccountDelegated(wif: string, params: object, preferences = {}) {
+  return (dispatch: () => void) => {
+    const { creator, username, password } = params;
+    let client
+    if(preferences && preferences.steemd_node) {
+      client = new Client(preferences.steemd_node);
+    } else {
+      client = new Client('https://rpc.buildteam.io');
+    }
+    const dsteem = require('dsteem');
+    const creatorKey = dsteem.PrivateKey.fromString(wif);
+    dispatch(ProcessingActions.processingAccountCreate());
+    client.broadcast.createAccount({
+      creator, username, password
+    }, creatorKey).then(function(result) {
+      dispatch(ProcessingActions.processingAccountCreateComplete());
+      client.disconnect()
+    }, function(error) {
+      dispatch(ProcessingActions.processingAccountCreateFailed(error));
+    });
+  };
+}
+
+export function getMinimumAccountDelegation(preferences = {}) {
+  return async dispatch => {
+    let client
+    if(preferences && preferences.steemd_node) {
+      client = new Client(preferences.steemd_node);
+    } else {
+      client = new Client('https://rpc.buildteam.io');
+    }
+    const constants = await client.database.getConfig();
+    const chainProps = await client.database.getChainProperties();
+    const dynamicProps = await client.database.getDynamicGlobalProperties();
+
+    const creationFee = Asset.from(chainProps.account_creation_fee);
+    const sharePrice = Price.from({
+      base: dynamicProps.total_vesting_shares,
+      quote: dynamicProps.total_vesting_fund_steem
+    });
+
+    const ratio = constants.STEEMIT_CREATE_ACCOUNT_DELEGATION_RATIO;
+    const modifier = constants.STEEMIT_CREATE_ACCOUNT_WITH_STEEM_MODIFIER;
+
+    const fee = Asset.from('0.200 STEEM');
+
+    const targetDelegation = sharePrice.convert(creationFee.multiply(modifier * ratio));
+    const delegation = targetDelegation.subtract(sharePrice.convert(fee.multiply(ratio)));
+    const sp = sharePrice.convert(delegation);
+    client.disconnect();
+    dispatch({
+      type: ACCOUNT_DATA_MINIMUM_ACCOUNT_DELEGATION,
+      payload: { delegation, fee, sp }
+    });
   };
 }
 
@@ -239,7 +312,6 @@ export function setWithdrawVestingRoute(wif, params) {
       type: ACCOUNT_SET_WITHDRAW_VESTING_ROUTE_STARTED
     });
     steem.broadcast.setWithdrawVestingRoute(wif, account, target, percent * 100, autoVest, (err, result) => {
-      console.log(err, result);
       if (err) {
         dispatch({
           type: ACCOUNT_SET_WITHDRAW_VESTING_ROUTE_FAILED,
@@ -289,6 +361,34 @@ export function setVotingProxyCompleted() {
   }
 }
 
+export function voteWitness(wif, params) {
+  return (dispatch: () => void) => {
+    const { account, witness, approve } = params;
+    dispatch({
+      type: ACCOUNT_VOTE_WITNESS_STARTED
+    });
+    steem.broadcast.accountWitnessVote(wif, account, witness, approve, (err, result) => {
+      if (err) {
+        dispatch({
+          type: ACCOUNT_VOTE_WITNESS_FAILED,
+          payload: err
+        });
+      } else {
+        dispatch(refreshAccountData([account]));
+        dispatch({
+          type: ACCOUNT_VOTE_WITNESS_RESOLVED
+        });
+      }
+    });
+  }
+}
+
+export function voteWitnessCompleted() {
+  return {
+    type: ACCOUNT_VOTE_WITNESS_COMPLETED,
+  }
+}
+
 export function withdrawVesting(wif, params) {
   return (dispatch: () => void) => {
     const { account, vests } = params;
@@ -335,6 +435,58 @@ export function cancelWithdrawVesting(wif, params) {
         dispatch({
           type: ACCOUNT_VESTING_WITHDRAW_RESOLVED
         });
+      }
+    });
+  };
+}
+
+export function customJson(wif, params) {
+  return (dispatch: () => void) => {
+    const { account, id, json } = params
+    dispatch({
+      type: ACCOUNT_CUSTOM_JSON_STARTED
+    })
+    steem.broadcast.customJson(wif, [], [account], id, json, function(err, result) {
+      if(result) {
+        dispatch({
+          type: ACCOUNT_CUSTOM_JSON_RESOLVED
+        })
+      }
+      if(err) {
+        dispatch({
+          type: ACCOUNT_CUSTOM_JSON_FAILED,
+          payload: err
+        })
+      }
+    });
+  };
+}
+
+
+export function customJsonCompleted() {
+  return {
+    type: ACCOUNT_CUSTOM_JSON_COMPLETED,
+  }
+}
+
+export function send(wif, params) {
+  return (dispatch: () => void) => {
+    const { operations, extensions } = params
+    console.log(operations, extensions)
+    dispatch({
+      type: ACCOUNT_CUSTOM_OPS_STARTED
+    })
+    steem.broadcast.send({ operations, extensions }, { posting: wif }, function(err, result) {
+      if(result) {
+        dispatch({
+          type: ACCOUNT_CUSTOM_OPS_RESOLVED
+        })
+      }
+      if(err) {
+        dispatch({
+          type: ACCOUNT_CUSTOM_OPS_FAILED,
+          payload: err
+        })
       }
     });
   };

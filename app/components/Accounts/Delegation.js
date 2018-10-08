@@ -10,52 +10,83 @@ export default class AccountsProxy extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      vests: 0,
+      editDelegationFor: false,
       sp: 0,
-      editDelegationFor: false
+      undelegateError: false,
+      vests: 0,
     };
     this.props.actions.resetState = this.resetState.bind(this);
   }
   state = {
-    vests: 0,
+    editDelegationFor: false,
     sp: 0,
-    editDelegationFor: false
+    vests: 0,
   }
   componentWillReceiveProps = (nextProps) => {
+    if (nextProps.processing.account_delegate_vesting_shares_error) {
+      this.setState({
+        undelegateError: nextProps.processing.account_delegate_vesting_shares_error
+      })
+      nextProps.actions.setDelegateVestingSharesCompleted();
+    }
     if (nextProps.processing.account_delegate_vesting_shares_resolved) {
       nextProps.actions.setDelegateVestingSharesCompleted();
       this.resetState();
     }
   }
-  resetState() {
+  resetState = () => {
     this.setState({
-      editDelegationFor: false
+      editDelegationFor: false,
+      sp: 0,
+      undelegateError: false,
+      vests: 0,
+      [this.state.editDelegationFor]: '',
     });
   }
   handleCancel = () => {
     this.resetState();
   }
   handleOnChange = (value) => {
-    const vests = parseFloat(value).toFixed(6);
+    const parsed = parseFloat(value)
+    if (Number.isNaN(parsed)) {
+      return
+    }
+    const vests = parsed.toFixed(6);
     const props = this.props.steem.props;
     const totalVestsSteem = parseFloat(props.total_vesting_fund_steem.split(" ")[0])
     const totalVests = parseFloat(props.total_vesting_shares.split(" ")[0])
-    const sp = totalVestsSteem * vests / totalVests;
+    const sp = (totalVestsSteem * vests / totalVests).toFixed(3);
     this.setState({ vests, sp });
   }
 
   handleOnChangeComplete = (value) => {
-    const vests = parseFloat(value).toFixed(6);
+    const parsed = parseFloat(value)
+    if (Number.isNaN(parsed)) {
+      return
+    }
+    const vests = parsed.toFixed(6);
     const props = this.props.steem.props;
     const totalVestsSteem = parseFloat(props.total_vesting_fund_steem.split(" ")[0])
     const totalVests = parseFloat(props.total_vesting_shares.split(" ")[0])
-    const sp = totalVestsSteem * vests / totalVests;
+    const sp = (totalVestsSteem * vests / totalVests).toFixed(3);
     this.setState({ vests, sp });
   }
   handleVestingSharesRemove = (e, props) => {
-    const { delegator, delegatee, id } = props.value.delegatee;
+    let { delegator, delegatee, id } = props.value.delegatee;
+    delegatee = delegatee.toLowerCase().replace('@', '');
     const permissions = this.props.keys.permissions;
+    this.setState({undelegateError: false})
     this.props.actions.useKey('setDelegateVestingShares', { delegator, delegatee, vestingShares: 0.000000 }, permissions[delegator])
+  }
+  handleVestingSharesEdit = (e, props) => {
+    const t = this
+    let { delegator, delegatee, id, vesting_shares } = props.value.delegatee;
+    this.setState({
+      editDelegationFor: delegator,
+      [delegator]: delegatee,
+    }, () => {
+      this.handleOnChange(parseFloat(vesting_shares.split(" ")[0]))
+    })
   }
   handleSetDelegateVesting = (e, props) => {
     this.setState({
@@ -70,6 +101,29 @@ export default class AccountsProxy extends Component {
     this.props.actions.useKey('setDelegateVestingShares', { delegator, delegatee, vestingShares: vests }, permissions[delegator])
     e.preventDefault();
   }
+  handleOnChangeInput = (e, props) => {
+    const { name, value } = props
+    const globalProps = this.props.steem.props;
+    const totalVestsSteem = parseFloat(globalProps.total_vesting_fund_steem.split(" ")[0])
+    const totalVests = parseFloat(globalProps.total_vesting_shares.split(" ")[0])
+    const parsed = parseFloat(value)
+    let vests, sp
+    if (Number.isNaN(parsed)) {
+      this.setState({ [name]: value });
+      return
+    }
+    if (name === 'vests') {
+      const fixed = parsed.toFixed(6);
+      sp = (totalVestsSteem * fixed / totalVests).toFixed(3)
+      vests = value
+    }
+    if (name === 'sp') {
+      const fixed = parsed.toFixed(3);
+      sp = value
+      vests = (fixed / totalVestsSteem * totalVests).toFixed(6)
+    }
+    this.setState({ vests, sp });
+  }
   handleChangeVestingShares = (e, props) => {
     const editing = this.state.editDelegationFor;
     const newState = {};
@@ -79,6 +133,16 @@ export default class AccountsProxy extends Component {
   render() {
     const t = this;
     let addVesting = false;
+    let undelegateError = false;
+    if (this.state.undelegateError) {
+      undelegateError = (
+        <Message
+          error
+          header='Operation Error'
+          content={this.state.undelegateError}
+        />
+      )
+    }
     const numberFormat = {
       shortFormat: true,
       shortFormatMinValue: 1000
@@ -93,15 +157,22 @@ export default class AccountsProxy extends Component {
       const account = this.props.account.accounts[name];
       const delegated = parseFloat(account.delegated_vesting_shares.split(" ")[0]);
       const vests = parseFloat(account.vesting_shares.split(" ")[0]);
-      const available = vests - delegated;
+      let existingDelegation = 0
+      if (this.props.account.vestingDelegations && this.props.account.vestingDelegations[name]) {
+        const existingDelegations = this.props.account.vestingDelegations[name]
+        existingDelegation = existingDelegations.reduce((a, b) => (b.delegatee === this.state[name]) ? a + parseFloat(b.vesting_shares.split(" ")[0]) : 0, 0)
+      }
+      const available = vests - delegated + existingDelegation;
+      const target = parseFloat(this.state.vests)
+      const delegateWarning = (target > available - 100)
       addVesting = (
         <Modal
           size="small"
           open
           header="Delegate Vests to another Account"
+          onClose={this.resetState}
           content={
             <Form
-              error={account_delegate_vesting_shares_error}
               loading={account_delegate_vesting_shares_pending}
             >
               <Segment
@@ -112,24 +183,44 @@ export default class AccountsProxy extends Component {
                   Please enter the name of the target account that you wish to delegate
                   a portion of the {name} account's vested weight to.
                 </p>
-                <Input
-                  fluid
-                  name="delegatee"
-                  placeholder="Delegatee Account Name"
-                  autoFocus
-                  onChange={this.handleChangeVestingShares}
-                />
-                <Divider />
-                <p>
-                  Use the slider to determine how much of your VESTS to delegate.
-                </p>
+                <Segment padded>
+                  <Form.Field>
+                    <label>Delegatee Account Name</label>
+                    <Input
+                      fluid
+                      name="delegatee"
+                      placeholder="Delegatee Account Name"
+                      defaultValue={this.state[name]}
+                      autoFocus
+                      onChange={this.handleChangeVestingShares}
+                    />
+                  </Form.Field>
+                  <Form.Field>
+                    <label>Steem Power</label>
+                    <Input
+                      fluid
+                      name="sp"
+                      value={this.state.sp}
+                      onChange={this.handleOnChangeInput}
+                    />
+                  </Form.Field>
+                  <Form.Field>
+                    <label>Vesting Shares</label>
+                    <Input
+                      fluid
+                      name="vests"
+                      value={this.state.vests}
+                      onChange={this.handleOnChangeInput}
+                    />
+                  </Form.Field>
+                </Segment>
                 <Grid>
                   <Grid.Row>
                     <Grid.Column width={12}>
                       <Segment padded="very" basic>
                         <InputRange
                           maxValue={available}
-                          minValue={0.000001}
+                          minValue={0}
                           value={this.state.vests}
                           onChange={this.handleOnChange}
                           onChangeComplete={this.handleOnChangeComplete}
@@ -150,11 +241,18 @@ export default class AccountsProxy extends Component {
                   </Grid.Row>
                 </Grid>
                 <Message
+                  error
+                  visible={delegateWarning}
+                  header="Warning! Delegating too much SP."
+                  content="Leaving so little SP in this account may cause it to stop functioning, meaning you may have to power up more Steem or Delegate to this account from another in order to even undo what you are about to do."
+                />
+                <Message
                   header="Caution! Delegation takes 7 days to revoke."
                   content="If you confirm this delegation, it will take effect immediately. When you are ready to revoke the delegation, it will take 7 days for that delegated balance to return to your account."
                 />
                 <Message
                   error
+                  visible={(typeof account_delegate_vesting_shares_error === 'undefined') ? false : true}
                   header='Operation Error'
                   content={account_delegate_vesting_shares_error}
                 />
@@ -239,9 +337,6 @@ export default class AccountsProxy extends Component {
                       <Table.HeaderCell>
                         Amount
                       </Table.HeaderCell>
-                      <Table.HeaderCell>
-                        Date Revokable
-                      </Table.HeaderCell>
                       <Table.HeaderCell collapsing>
 
                       </Table.HeaderCell>
@@ -256,16 +351,25 @@ export default class AccountsProxy extends Component {
                           <AccountName name={delegatee.delegatee} />
                         </Table.Cell>
                         <Table.Cell>
-                          <NumericLabel params={numberFormat}>{vests}</NumericLabel></Table.Cell>
-                        <Table.Cell>{delegatee.min_delegation_time}</Table.Cell>
+                          <NumericLabel params={numberFormat}>{vests}</NumericLabel>
+                        </Table.Cell>
                         <Table.Cell>
-                          <Button
-                            color="orange"
-                            size="small"
-                            icon="trash"
-                            value={{ delegatee }}
-                            onClick={this.handleVestingSharesRemove}
-                          />
+                          <Button.Group>
+                            <Button
+                              color="blue"
+                              size="small"
+                              icon="pencil"
+                              value={{ delegatee }}
+                              onClick={this.handleVestingSharesEdit}
+                            />
+                            <Button
+                              color="orange"
+                              size="small"
+                              icon="trash"
+                              value={{ delegatee }}
+                              onClick={this.handleVestingSharesRemove}
+                            />
+                          </Button.Group>
                         </Table.Cell>
                       </Table.Row>
                     )
@@ -298,6 +402,7 @@ export default class AccountsProxy extends Component {
             exactly 7 days before returning to the original account.
           </Header.Subheader>
         </Header>
+        {undelegateError}
         <Table celled>
           <Table.Header>
             <Table.Row>

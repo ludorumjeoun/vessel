@@ -1,7 +1,8 @@
 // @flow
 import React, { Component } from 'react';
-import { Button, Grid, Label, Message, Modal, Radio, Segment, Select, Table } from 'semantic-ui-react';
+import { Button, Checkbox, Grid, Label, Message, Modal, Radio, Segment, Select, Table } from 'semantic-ui-react';
 import { Form, Input } from 'formsy-semantic-ui-react';
+import steem from 'steem';
 
 const { shell } = require('electron');
 
@@ -9,7 +10,7 @@ const exchangeOptions = [
   {
     key: 'bittrex',
     text: 'Bittrex (@bittrex)',
-    value: 'bittrex',
+    value: 'bittrex'
   },
   {
     key: 'blocktrades',
@@ -22,14 +23,14 @@ const exchangeOptions = [
     value: 'changelly',
   },
   {
-    key: 'openledger',
-    text: 'OpenLedger (@openledger)',
-    value: 'openledger'
+    key: 'openledger-dex',
+    text: 'OpenLedger (@openledger-dex)',
+    value: 'openledger-dex'
   },
   {
     key: 'poloniex',
-    text: 'Poloniex (@poloniex)',
-    value: 'poloniex',
+    text: '(!) Poloniex (@poloniex)',
+    value: 'poloniex'
   },
   {
     key: 'shapeshiftio',
@@ -42,10 +43,21 @@ const exchangeLinks = {
   bittrex: 'https://bittrex.com',
   blocktrades: 'https://blocktrades.us',
   changelly: 'https://changelly.com',
-  openledger: 'https://openledger.io',
+  'openledger-dex': 'https://openledger.io',
   poloniex: 'https://poloniex.com',
   shapeshiftio: 'https://shapeshift.io'
 };
+
+const exchangeNotes = {
+  poloniex: (
+    <Message>
+      <strong>Warning</strong>:
+      Poloniex deposits have not been working for months, it's recommended to avoid this exchange. Please ensure verify whether or not their Steem wallet is active on their website.
+    </Message>
+  )
+}
+
+const exchangeSupportingEncryption = ['bittrex'];
 
 const defaultState = {
   from: '',
@@ -53,6 +65,8 @@ const defaultState = {
   amount: '',
   symbol: 'STEEM',
   memo: '',
+  memoEncrypted: false,
+  encryptMemo: false,
   destination: 'account',
   // destination: 'exchange',
   modalPreview: false,
@@ -77,6 +91,8 @@ export default class Send extends Component {
       to: '',
       amount: '',
       memo: '',
+      memoEncrypted: false,
+      encryptMemo: false,
       modalPreview: false,
       memoDetected: false
     });
@@ -85,7 +101,9 @@ export default class Send extends Component {
     this.setState({
       to: '',
       memo: '',
-      destination: value
+      destination: value,
+      encryptMemo: false,
+      memoEncrypted: false
     });
   }
   handleSymbolChange = (e: SyntheticEvent, { value }: { value: any }) => {
@@ -97,6 +115,20 @@ export default class Send extends Component {
       memoDetected: (detectMemo)
     };
     this.setState(newState);
+  }
+
+  handleMemoEncryptChange = (e: SyntheticEvent, { value }: { value: any }) => {
+    if(this.state.encryptMemo === false) {
+      this.setState({
+        encryptMemo: true,
+        memoEncrypted: false
+      })
+    } else {
+      this.setState({
+        encryptMemo: false,
+        memoEncrypted: false
+      })
+    }
   }
 
   detectMemo = (to: string, symbol: string) => {
@@ -114,9 +146,11 @@ export default class Send extends Component {
   handleToChange = (e: SyntheticEvent, { value }: { value: string }) => {
     const cleaned = value.replace('@', '').trim();
     const newState = {
+      encryptMemo: false,
       to: cleaned,
       memo: this.detectMemo(cleaned, this.state.symbol) || '',
-      memoDetected: (this.detectMemo(cleaned, this.state.symbol))
+      memoDetected: (this.detectMemo(cleaned, this.state.symbol)),
+      memoEncrypted: false
     }
     // Set state
     this.setState(newState);
@@ -124,7 +158,11 @@ export default class Send extends Component {
 
   handleMemoChange = (e: SyntheticEvent, { value }: { value: string }) => {
     const cleaned = value.replace(/\s+/gim, ' ');
-    this.setState({ memo: cleaned });
+    this.setState({
+      memo: cleaned,
+      encryptMemo: false,
+      memoEncrypted: false
+    });
   }
 
   handleAmountChange = (e: SyntheticEvent, { value }: { value: any }) => {
@@ -145,7 +183,11 @@ export default class Send extends Component {
   }
 
   handleFromChange = (e: SyntheticEvent, { value }: { value: any }) => {
-    this.setState({ from: value })
+    this.setState({
+      from: value,
+      encryptMemo: false,
+      memoEncrypted: false
+    })
   }
 
   isFormValid = () => {
@@ -155,16 +197,50 @@ export default class Send extends Component {
   handlePreview = (e: SyntheticEvent) => {
     if(this.isFormValid()) {
       const cleaned = this.state.memo.trim();
-      this.setState({ 
-        memo: cleaned,
-        modalPreview: true 
-      });
+      if(this.state.encryptMemo) {
+        const from = this.state.from;
+        const to = this.state.to;
+        const memoKey = this.props.keys.permissions[from].memo
+        // Make sure we have a memoKey set and it's a valid WIF
+        if(memoKey && steem.auth.isWif(memoKey)) {
+          // Ensure it's the current memo key on file to prevent a user from using an invalid key
+          const derivedKey = steem.auth.wifToPublic(memoKey);
+          const memoPublic = this.props.account.accounts[from].memo_key;
+          if (derivedKey === memoPublic) {
+            // Load the account we're sending to
+            steem.api.getAccounts([to], (err, result) => {
+              if(result.length > 0) {
+                const toAccount = result[0];
+                const toMemoPublic = toAccount.memo_key;
+                // Generate encrypted memo based on their public memo key + our private memo key
+                const memoEncrypted = steem.memo.encode(memoKey, toMemoPublic, `#${cleaned}`);
+                // Set the state to reflect
+                this.setState({
+                  memo: cleaned,
+                  memoEncrypted: memoEncrypted,
+                  modalPreview: true
+                });
+              } else {
+                // no account found
+              }
+            });
+          } else {
+            // memo key saved on account doesn't match blockchain
+          }
+        } else {
+          // memo key is not saved or is not valid wif
+        }
+      } else {
+        this.setState({
+          memo: cleaned,
+          modalPreview: true
+        });
+      }
     }
     e.preventDefault();
   }
 
   handleCancel = (e: SyntheticEvent) => {
-    // console.log('modalPreview', this.state);
     this.setState({
       modalPreview: false
     });
@@ -172,10 +248,11 @@ export default class Send extends Component {
   }
 
   handleConfirm = (e: SyntheticEvent) => {
-    const { from, to, symbol, memo } = this.state;
+    const { from, to, symbol, memo, memoEncrypted } = this.state;
+    const usedMemo = memoEncrypted || memo;
     const amount = parseFloat(this.state.amount).toFixed(3);
     const amountFormat = [amount, symbol].join(' ');
-    this.props.actions.useKey('transfer', { from, to, amount: amountFormat, memo }, this.props.keys.permissions[from]);
+    this.props.actions.useKey('transfer', { from, to, amount: amountFormat, memo: usedMemo }, this.props.keys.permissions[from]);
     this.setState({
       modalPreview: false
     });
@@ -215,11 +292,13 @@ export default class Send extends Component {
         errorLabel={errorLabel}
       />
     );
+    let encryptedField = false;
     if (this.state.destination === 'exchange') {
       let externalLink = false;
       if (this.state.to) {
         externalLink = (
           <p style={{ marginLeft: '1em' }}>
+            {exchangeNotes[this.state.to]}
             <a
               onClick={this.handleExternalLink}
               value={this.state.to}
@@ -244,6 +323,19 @@ export default class Send extends Component {
           {externalLink}
         </div>
       );
+    }
+    if (keys.permissions[this.state.from] && keys.permissions[this.state.from].memo && steem.auth.isWif(keys.permissions[this.state.from].memo)) {
+      if ((exchangeSupportingEncryption.indexOf(this.state.to) >= 0) || (this.state.destination === 'account')) {
+        encryptedField = (
+          <Form.Field>
+            <Checkbox
+              label='Encrypt Memo?'
+              checked={this.state.encryptMemo}
+              onChange={this.handleMemoEncryptChange}
+            />
+          </Form.Field>
+        );
+      }
     }
     if (this.state.modalPreview) {
       modal = (
@@ -300,7 +392,7 @@ export default class Send extends Component {
                       Memo:
                     </Table.Cell>
                     <Table.Cell>
-                      <code>{this.state.memo}</code>
+                      <code>{(this.state.memoEncrypted) ? this.state.memoEncrypted : this.state.memo}</code>
                     </Table.Cell>
                   </Table.Row>
                 </Table.Body>
@@ -445,6 +537,7 @@ export default class Send extends Component {
                 onChange={this.handleMemoChange}
                 disabled={this.state.memoDetected}
               />
+              {encryptedField}
             </Grid.Column>
           </Grid.Row>
           <Grid.Row>

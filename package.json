@@ -1,7 +1,7 @@
 {
   "name": "vessel",
   "productName": "vessel",
-  "version": "0.0.6h",
+  "version": "0.2.8",
   "description": "A simple wallet for managing your Steem accounts.",
   "scripts": {
     "test": "cross-env NODE_ENV=test BABEL_DISABLE_CACHE=1 node --trace-warnings ./test/runTests.js",
@@ -28,9 +28,10 @@
     "package-win": "npm run build && build --win --x64",
     "package-linux": "npm run build && build --linux",
     "package-all": "npm run build && build -mwl",
-    "release": "build -mwl"
+    "release": "build -mwl",
+    "dist": "electron-builder"
   },
-  "browserslist": "electron 1.6",
+  "browserslist": "electron 1.8",
   "build": {
     "productName": "Vessel",
     "appId": "com.greymass.vessel",
@@ -41,6 +42,16 @@
       "main.prod.js",
       "main.prod.js.map",
       "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "steem",
+        "role": "Viewer",
+        "schemes": [
+          "steem",
+          "vessel"
+        ]
+      }
     ],
     "dmg": {
       "icon": "assets/icons/mac/icon.icns",
@@ -67,10 +78,23 @@
       ]
     },
     "linux": {
+      "category": "Network",
+      "desktop": {
+        "Name": "vessel",
+        "Version": "0.2.2",
+        "GenericName": "Steem Client",
+        "X-GNOME-FullName": "vessel",
+        "Comment": "A simple wallet for managing your Steem accounts.",
+        "Type": "Application",
+        "Terminal": "false",
+        "StartupNotify": "false",
+        "Categories": "Network;",
+        "MimeType": "application/x-steem;x-scheme-handler/steem;"
+      },
       "icon": "assets/icons/png",
       "target": [
         "deb",
-        "AppImage"
+        "snap"
       ]
     },
     "directories": {
@@ -139,8 +163,8 @@
     "cross-spawn": "^5.1.0",
     "css-loader": "^0.28.0",
     "devtron": "^1.4.0",
-    "electron": "^1.6.6",
-    "electron-builder": "^17.1.1",
+    "electron": "1.7.11",
+    "electron-builder": "^19.49.0",
     "electron-devtools-installer": "^2.2.0",
     "enzyme": "^2.8.2",
     "enzyme-to-json": "^1.5.1",
@@ -190,6 +214,7 @@
     "bip39": "^2.3.0",
     "bufferutil": "^3.0.0",
     "crypto-js": "^3.1.9-1",
+    "dsteem": "^0.6.0",
     "electron-config": "^1.0.0",
     "electron-debug": "^1.1.0",
     "electron-json-storage": "^3.0.5",
@@ -199,6 +224,8 @@
     "formsy-semantic-ui-react": "^0.2.3",
     "history": "^4.6.1",
     "react": "^15.5.4",
+    "react-autocomplete": "^1.7.2",
+    "react-collapsible": "^2.0.3",
     "react-dom": "^15.5.4",
     "react-hot-loader": "3.0.0-beta.6",
     "react-input-range": "^1.1.3",
@@ -213,7 +240,8 @@
     "redux-thunk": "^2.2.0",
     "semantic-ui-react": "^0.68.3",
     "source-map-support": "^0.4.15",
-    "steem": "^0.5.8",
+    "steem": "^0.6.4",
+    "url-parse": "^1.2.0",
     "utf-8-validate": "^3.0.1"
   },
   "devEngines": {

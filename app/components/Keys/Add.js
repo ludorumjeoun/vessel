@@ -6,6 +6,7 @@ import { Button, Divider, Grid, Header, Segment } from 'semantic-ui-react';
 import KeysGenerate from './Generate';
 import KeysImport from './Import';
 import KeysLogin from './Login';
+import KeysCreate from './Create';
 
 export default class Welcome extends Component {
 

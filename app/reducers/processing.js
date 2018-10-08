@@ -1,5 +1,9 @@
 // @flow
 import {
+  PROCESSING_ACCOUNT_CREATE,
+  PROCESSING_ACCOUNT_CREATE_CANCEL,
+  PROCESSING_ACCOUNT_CREATE_COMPLETE,
+  PROCESSING_ACCOUNT_CREATE_FAILED,
   PROCESSING_ACCOUNT_LOADING,
   PROCESSING_ACCOUNT_LOADING_COMPLETE,
   PROCESSING_REWARD_CLAIM,
@@ -7,6 +11,14 @@ import {
 } from '../actions/processing';
 
 import {
+  ACCOUNT_CUSTOM_JSON_STARTED,
+  ACCOUNT_CUSTOM_JSON_RESOLVED,
+  ACCOUNT_CUSTOM_JSON_FAILED,
+  ACCOUNT_CUSTOM_JSON_COMPLETED,
+  ACCOUNT_CUSTOM_OPS_STARTED,
+  ACCOUNT_CUSTOM_OPS_RESOLVED,
+  ACCOUNT_CUSTOM_OPS_FAILED,
+  ACCOUNT_CUSTOM_OPS_COMPLETED,
   ACCOUNT_TRANSFER_STARTED,
   ACCOUNT_TRANSFER_FAILED,
   ACCOUNT_TRANSFER_RESOLVED,
@@ -23,6 +35,10 @@ import {
   ACCOUNT_SET_VOTING_PROXY_FAILED,
   ACCOUNT_SET_VOTING_PROXY_STARTED,
   ACCOUNT_SET_VOTING_PROXY_RESOLVED,
+  ACCOUNT_VOTE_WITNESS_COMPLETED,
+  ACCOUNT_VOTE_WITNESS_FAILED,
+  ACCOUNT_VOTE_WITNESS_STARTED,
+  ACCOUNT_VOTE_WITNESS_RESOLVED,
   ACCOUNT_VESTING_WITHDRAW_COMPLETED,
   ACCOUNT_VESTING_WITHDRAW_FAILED,
   ACCOUNT_VESTING_WITHDRAW_STARTED,
@@ -42,6 +58,30 @@ type actionType = {
 export default function processing(state: any = defaultState, action: actionType) {
   // console.log('>>> reducers/processing', state, action);
   switch (action.type) {
+    case PROCESSING_ACCOUNT_CREATE:
+      return Object.assign({}, state, {
+        account_create_error: false,
+        account_create_pending: true,
+        account_create_resolved: false,
+      });
+    case PROCESSING_ACCOUNT_CREATE_CANCEL:
+      return Object.assign({}, state, {
+        account_create_error: false,
+        account_create_pending: false,
+        account_create_resolved: false,
+      });
+    case PROCESSING_ACCOUNT_CREATE_COMPLETE:
+      return Object.assign({}, state, {
+        account_create_error: false,
+        account_create_pending: false,
+        account_create_resolved: true,
+      });
+    case PROCESSING_ACCOUNT_CREATE_FAILED:
+      return Object.assign({}, state, {
+        account_create_error: action.payload.message,
+        account_create_pending: false,
+        account_create_resolved: false,
+      });
     case ACCOUNT_TRANSFER_STARTED:
       return Object.assign({}, state, {
         account_transfer_error: false,
@@ -59,6 +99,54 @@ export default function processing(state: any = defaultState, action: actionType
         account_transfer_error: false,
         account_transfer_resolved: true,
         account_transfer_pending: false
+      });
+    case ACCOUNT_CUSTOM_JSON_STARTED:
+      return Object.assign({}, state, {
+        account_custom_json_error: false,
+        account_custom_json_resolved: false,
+        account_custom_json_pending: true
+      });
+    case ACCOUNT_CUSTOM_JSON_FAILED:
+      return Object.assign({}, state, {
+        account_custom_json_error: setError(action.payload),
+        account_custom_json_resolved: false,
+        account_custom_json_pending: false
+      });
+    case ACCOUNT_CUSTOM_JSON_RESOLVED:
+      return Object.assign({}, state, {
+        account_custom_json_error: false,
+        account_custom_json_resolved: true,
+        account_custom_json_pending: false
+      });
+    case ACCOUNT_CUSTOM_JSON_COMPLETED:
+      return Object.assign({}, state, {
+        account_custom_json_error: false,
+        account_custom_json_resolved: false,
+        account_custom_json_pending: false
+      });
+    case ACCOUNT_CUSTOM_OPS_STARTED:
+      return Object.assign({}, state, {
+        account_custom_ops_error: false,
+        account_custom_ops_resolved: false,
+        account_custom_ops_pending: true
+      });
+    case ACCOUNT_CUSTOM_OPS_FAILED:
+      return Object.assign({}, state, {
+        account_custom_ops_error: setError(action.payload),
+        account_custom_ops_resolved: false,
+        account_custom_ops_pending: false
+      });
+    case ACCOUNT_CUSTOM_OPS_RESOLVED:
+      return Object.assign({}, state, {
+        account_custom_ops_error: false,
+        account_custom_ops_resolved: true,
+        account_custom_ops_pending: false
+      });
+    case ACCOUNT_CUSTOM_OPS_COMPLETED:
+      return Object.assign({}, state, {
+        account_custom_ops_error: false,
+        account_custom_ops_resolved: false,
+        account_custom_ops_pending: false
       });
     case ACCOUNT_TRANSFER_COMPLETED:
       return Object.assign({}, state, {
@@ -137,6 +225,30 @@ export default function processing(state: any = defaultState, action: actionType
         account_set_voting_proxy_resolved: false,
         account_set_voting_proxy_error: false,
         account_set_voting_proxy_pending: false,
+      });
+    case ACCOUNT_VOTE_WITNESS_STARTED:
+      return Object.assign({}, state, {
+        account_vote_witness_resolved: false,
+        account_vote_witness_error: false,
+        account_vote_witness_pending: true,
+      });
+    case ACCOUNT_VOTE_WITNESS_FAILED:
+      return Object.assign({}, state, {
+        account_vote_witness_resolved: false,
+        account_vote_witness_error: setError(action.payload),
+        account_vote_witness_pending: false,
+      });
+    case ACCOUNT_VOTE_WITNESS_RESOLVED:
+      return Object.assign({}, state, {
+        account_vote_witness_resolved: true,
+        account_vote_witness_error: false,
+        account_vote_witness_pending: false,
+      });
+    case ACCOUNT_VOTE_WITNESS_COMPLETED:
+      return Object.assign({}, state, {
+        account_vote_witness_resolved: false,
+        account_vote_witness_error: false,
+        account_vote_witness_pending: false,
       });
     case ACCOUNT_VESTING_WITHDRAW_STARTED:
       return Object.assign({}, state, {

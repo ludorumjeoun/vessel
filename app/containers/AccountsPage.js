@@ -3,16 +3,21 @@ import React, { Component } from 'react';
 import { bindActionCreators } from 'redux';
 import { Redirect } from 'react-router';
 import { connect } from 'react-redux';
-import { Button, Header, Icon, Menu, Modal, Segment } from 'semantic-ui-react';
+import { Button, Header, Icon, Menu, Modal, Segment, Table } from 'semantic-ui-react';
 
 import Accounts from '../components/Accounts';
+import AccountsAuths from '../components/Accounts/Auths';
 import AccountsDelegation from '../components/Accounts/Delegation';
 import AccountsProxy from '../components/Accounts/Proxy';
+import AccountsVoting from '../components/Accounts/Voting';
 import * as AccountActions from '../actions/account';
 import * as KeyActions from '../actions/keys';
+import * as ProcessingActions from '../actions/processing';
 import MenuBar from './MenuBar';
 import ContentBar from '../components/ContentBar';
 import KeysAdd from '../components/Keys/Add';
+import KeysCreate from '../components/Keys/Create';
+import KeysMemo from '../components/Keys/Memo';
 
 class AccountsPage extends Component {
 
@@ -20,6 +25,11 @@ class AccountsPage extends Component {
     activeItem: 'keys',
     addAccount: false
   };
+
+  constructor(props) {
+    super(props);
+    props.actions.getMinimumAccountDelegation(props.preferences);
+  }
 
   handleItemClick = (e, { name }) => this.setState({ activeItem: name })
 
@@ -29,6 +39,22 @@ class AccountsPage extends Component {
 
   handleAddAccountCancel = () => {
     this.props.actions.addKeyCancel();
+  }
+
+  handleAddMemoKeyCancel = () => {
+    this.props.actions.addMemoKeyCancel();
+  }
+
+  handleAddMemoKeyConfirmed = () => {
+    this.props.actions.addMemoKeyConfirmed();
+  }
+
+  handleCreateAccount = () => {
+    this.props.actions.createKeyPrompt();
+  }
+
+  handleCreateAccountCancel = () => {
+    this.props.actions.createKeyCancel();
   }
 
   handleRemoveKeyCancel = () => {
@@ -50,7 +76,7 @@ class AccountsPage extends Component {
         <Modal
           open
           closeIcon="close"
-          style="large"
+          className="large"
           content={
             <Segment basic>
               <KeysAdd {...this.props} />
@@ -60,14 +86,41 @@ class AccountsPage extends Component {
         />
       );
     }
+    if (this.props.keys.createPrompt) {
+      modal = (
+        <Modal
+          open
+          closeIcon="close"
+          className="large"
+          content={
+            <Segment basic>
+              <KeysCreate
+                handleMethodReset={this.handleCreateAccountCancel}
+                {...this.props}
+              />
+            </Segment>
+          }
+          onClose={this.handleCreateAccountCancel}
+        />
+
+      )
+    }
     let activeTab = <Accounts {...this.props} />;
     switch (activeItem) {
+      case 'auths': {
+        activeTab = <AccountsAuths {...this.props} />;
+        break;
+      }
       case 'delegation': {
         activeTab = <AccountsDelegation {...this.props} />;
         break;
       }
       case 'proxy': {
         activeTab = <AccountsProxy {...this.props} />;
+        break;
+      }
+      case 'voting': {
+        activeTab = <AccountsVoting {...this.props} />;
         break;
       }
       default: {
@@ -112,6 +165,28 @@ class AccountsPage extends Component {
         />
       );
     }
+    if (this.props.keys.addMemoPrompt) {
+      modal = (
+        <Modal
+          open
+          header="Add a Memo Key"
+          content={
+            <KeysMemo
+              actions={this.props.actions}
+              keys={this.props.keys}
+            />
+          }
+          actions={[
+            {
+              key: 'no',
+              content: 'Cancel',
+              color: 'red',
+              onClick: this.handleAddMemoKeyCancel
+            }
+          ]}
+        />
+      );
+    }
     return (
       <ContentBar>
         {modal}
@@ -122,7 +197,14 @@ class AccountsPage extends Component {
               onClick={this.handleAddAccount}
               icon="plus"
               floated="right"
-              content="Add another account"
+              content="Add account"
+            />
+            <Button
+              color="blue"
+              onClick={this.handleCreateAccount}
+              icon="plus"
+              floated="right"
+              content="Create account"
             />
             <Icon name="users" />
             <Header.Content>
@@ -142,10 +224,10 @@ class AccountsPage extends Component {
             onClick={this.handleItemClick}
           />
           <Menu.Item
-            name="proxy"
-            icon="sitemap"
-            content="Witness Proxy"
-            active={activeItem === 'proxy'}
+            name="auths"
+            icon="users"
+            content="Account Auths"
+            active={activeItem === 'auths'}
             onClick={this.handleItemClick}
           />
           <Menu.Item
@@ -153,6 +235,20 @@ class AccountsPage extends Component {
             icon="tasks"
             content="SP Delegation"
             active={activeItem === 'delegation'}
+            onClick={this.handleItemClick}
+          />
+          <Menu.Item
+            name="proxy"
+            icon="sitemap"
+            content="Witness Proxy"
+            active={activeItem === 'proxy'}
+            onClick={this.handleItemClick}
+          />
+          <Menu.Item
+            name="voting"
+            icon="check"
+            content="Witness Voting"
+            active={activeItem === 'voting'}
             onClick={this.handleItemClick}
           />
         </Menu>
@@ -168,6 +264,7 @@ function mapStateToProps(state) {
     account: state.account,
     keys: state.keys,
     processing: state.processing,
+    preferences: state.preferences,
     steem: state.steem
   };
 }
@@ -177,6 +274,7 @@ function mapDispatchToProps(dispatch) {
     actions: bindActionCreators({
       ...AccountActions,
       ...KeyActions,
+      ...ProcessingActions,
     }, dispatch)
   };
 }
